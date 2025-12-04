@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 public class MockGeoPropertiesService {
@@ -19,16 +18,16 @@ public class MockGeoPropertiesService {
     private static final String ERROR = "error";
 
     public Mono<Map<String, Object>> filterProperties(PropertySearchFilterDTO filter) {
-        Map<String, Object> all = mockFeatureCollection("").block();
+        Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) return Mono.just(emptyFeatureCollection());
         List<Map<String, Object>> features = getFeatures(all);
         List<Map<String, Object>> filtered = features.stream()
                 .filter(f -> matchesFilter(f, filter))
-                .collect(Collectors.toList());
+                .toList();
         return Mono.just(featureCollection(filtered));
     }
 
-    public Mono<Map<String, Object>> mockFeatureCollection(String bbox) {
+    public Mono<Map<String, Object>> mockFeatureCollection() {
 
         Map<String, Object> f1 = feature("prop-123", "GREEN", "$450K", "US$ 450,000", "901 Bagby St, Houston, TX 77002", "4bd | 3ba | 2,100 sqft", "https://cdn.gotnest.com/thumbs/prop-123-low.jpg", false, "Jay's Pick", -95.3698, 29.7604);
         Map<String, Object> f2 = feature("prop-456", "YELLOW", "$380K", "US$ 380,000", "600 Travis St, Houston, TX 77002", "3bd | 2ba | 1,600 sqft", "https://cdn.gotnest.com/thumbs/prop-456-low.jpg", true, null, -95.3657, 29.7601);
@@ -203,27 +202,52 @@ public class MockGeoPropertiesService {
     }
 
     public Mono<Map<String, Object>> searchByAddress(String query) {
-        Map<String, Object> all = mockFeatureCollection("").block();
+        Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) return Mono.just(emptyFeatureCollection());
         List<Map<String, Object>> features = getFeatures(all);
         List<Map<String, Object>> filtered = features.stream()
                 .filter(f -> addressContains(f, query))
-                .collect(Collectors.toList());
+                .toList();
         if (filtered.isEmpty()) {
             return Mono.just(Collections.singletonMap(ERROR, "We couldn’t find any property for the address you searched for."));
         }
         return Mono.just(featureCollection(filtered));
     }
 
+
+    public Mono<Map<String, Object>> searchByAddressWithBboxAndCount(String query) {
+        return searchByAddress(query)
+            .map(featureCollectionOrig -> {
+                var featureCollection = new java.util.HashMap<>(featureCollectionOrig);
+                var features = (List<Map<String, Object>>) featureCollection.get("features");
+                double minLon = Double.POSITIVE_INFINITY, minLat = Double.POSITIVE_INFINITY;
+                double maxLon = Double.NEGATIVE_INFINITY, maxLat = Double.NEGATIVE_INFINITY;
+                for (var feature : features) {
+                    var geometry = (Map<String, Object>) feature.get("geometry");
+                    var coords = (java.util.List<?>) geometry.get("coordinates");
+                    double lon = ((Number) coords.get(0)).doubleValue();
+                    double lat = ((Number) coords.get(1)).doubleValue();
+                    if (lon < minLon) minLon = lon;
+                    if (lon > maxLon) maxLon = lon;
+                    if (lat < minLat) minLat = lat;
+                    if (lat > maxLat) maxLat = lat;
+                }
+                if (!features.isEmpty()) {
+                    featureCollection.put("bbox", java.util.List.of(minLon, minLat, maxLon, maxLat));
+                }
+                featureCollection.put("count", features.size());
+                return featureCollection;
+            });
+    }
+
     public Mono<Map<String, Object>> getPropertyById(String id) {
-        Map<String, Object> all = mockFeatureCollection("").block();
+        Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) return Mono.just(Collections.singletonMap(ERROR, "Property not found"));
         return getFeatures(all).stream()
                 .filter(f -> idEquals(f, id))
                 .findFirst()
                 .map(f -> {
-                    // Adiciona campo de zoom recomendado
-                    var result = new java.util.HashMap<String, Object>(f);
+                    var result = new java.util.HashMap<>(f);
                     result.put("recommendedZoom", 15);
                     return (Map<String, Object>) result;
                 })
@@ -237,15 +261,15 @@ public class MockGeoPropertiesService {
         var predicates = java.util.List.<java.util.function.Predicate<Map<String, Object>>>of(
             f -> Optional.ofNullable(filter.getMinPrice())
                     .map(min -> parsePrice(card.get("fullPrice")))
-                    .map(price -> price == null || price.compareTo(filter.getMinPrice()) >= 0)
+                    .map(price -> price.compareTo(filter.getMinPrice()) >= 0)
                     .orElse(true),
             f -> Optional.ofNullable(filter.getMaxPrice())
                     .map(max -> parsePrice(card.get("fullPrice")))
-                    .map(price -> price == null || price.compareTo(filter.getMaxPrice()) <= 0)
+                    .map(price -> price.compareTo(filter.getMaxPrice()) <= 0)
                     .orElse(true),
             f -> Optional.ofNullable(filter.getMaxMonthlyPayment())
                     .map(max -> parsePrice(card.get("fullPrice")))
-                    .map(price -> price == null || price.multiply(java.math.BigDecimal.valueOf(0.005)).compareTo(filter.getMaxMonthlyPayment()) <= 0)
+                    .map(price -> price.multiply(BigDecimal.valueOf(0.005)).compareTo(filter.getMaxMonthlyPayment()) <= 0)
                     .orElse(true),
             f -> Optional.ofNullable(filter.getBedrooms())
                     .map(bd -> parseInt(card.get("bedrooms")))
@@ -312,7 +336,7 @@ public class MockGeoPropertiesService {
 
     private int parseInt(Object value) {
         if (value == null) return 0;
-        String str = value.toString().replaceAll("[^\\d]", "");
+        String str = value.toString().replaceAll("\\D", "");
         if (str.isEmpty()) return 0;
         try {
             return Integer.parseInt(str);
@@ -321,7 +345,6 @@ public class MockGeoPropertiesService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> feature(String id,
                                         String pinColor,
                                         String priceShort,
@@ -337,7 +360,6 @@ public class MockGeoPropertiesService {
                 "type", "Point",
                 "coordinates", List.of(lon, lat)
         );
-        // Parse specs string (e.g., "2bd | 2ba | 1,100 sqft")
         String[] specsParts = specs.split("\\|");
         String bedrooms = specsParts.length > 0 ? specsParts[0].trim() : "";
         String bathrooms = specsParts.length > 1 ? specsParts[1].trim() : "";
