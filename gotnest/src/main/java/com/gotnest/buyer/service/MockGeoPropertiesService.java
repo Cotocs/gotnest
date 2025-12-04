@@ -23,10 +23,10 @@ public class MockGeoPropertiesService {
     private static final String FEATURES = "features";
     private static final String ERROR = "error";
 
-    private static final double HOUSTON_MIN_LON = -95.7; // west
-    private static final double HOUSTON_MIN_LAT = 29.6;  // south
-    private static final double HOUSTON_MAX_LON = -95.1; // east
-    private static final double HOUSTON_MAX_LAT = 29.95; // north
+    private static final double HOUSTON_MIN_LON = -95.7;
+    private static final double HOUSTON_MIN_LAT = 29.6;
+    private static final double HOUSTON_MAX_LON = -95.1;
+    private static final double HOUSTON_MAX_LAT = 29.95;
 
     public Mono<Map<String, Object>> filterProperties(PropertySearchFilterDTO filter) {
         Map<String, Object> all = mockFeatureCollection().block();
