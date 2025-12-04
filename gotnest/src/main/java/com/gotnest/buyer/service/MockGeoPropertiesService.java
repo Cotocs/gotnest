@@ -1,5 +1,6 @@
 package com.gotnest.buyer.service;
 
+import com.gotnest.buyer.dto.PropertySearchFilterDTO;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -10,6 +11,52 @@ import java.util.Map;
 @Service
 public class MockGeoPropertiesService {
 
+    @SuppressWarnings("unchecked")
+    public Mono<Map<String, Object>> filterProperties(PropertySearchFilterDTO filter) {
+        Map<String, Object> all = mockFeatureCollection("").block();
+        if (all == null) return Mono.just(Map.of("type", "FeatureCollection", "features", List.of()));
+        List<Map<String, Object>> features = (List<Map<String, Object>>) all.get("features");
+        List<Map<String, Object>> filtered = features.stream().filter(f -> {
+            Map<String, Object> props = (Map<String, Object>) f.get("properties");
+            Map<String, Object> card = (Map<String, Object>) props.get("cardData");
+            if (filter.getMinPrice() != null || filter.getMaxPrice() != null) {
+                String priceStr = ((String) card.get("fullPrice")).replaceAll("[^\\d.]", "");
+                if (!priceStr.isEmpty()) {
+                    java.math.BigDecimal price = new java.math.BigDecimal(priceStr);
+                    if (filter.getMinPrice() != null && price.compareTo(filter.getMinPrice()) < 0) return false;
+                    if (filter.getMaxPrice() != null && price.compareTo(filter.getMaxPrice()) > 0) return false;
+                }
+            }
+            if (filter.getMaxMonthlyPayment() != null) {
+                String priceStr = ((String) card.get("fullPrice")).replaceAll("[^\\d.]", "");
+                if (!priceStr.isEmpty()) {
+                    java.math.BigDecimal price = new java.math.BigDecimal(priceStr);
+                    java.math.BigDecimal monthlyPayment = price.multiply(new java.math.BigDecimal("0.005"));
+                    if (monthlyPayment.compareTo(filter.getMaxMonthlyPayment()) > 0) return false;
+                }
+            }
+            if (filter.getBedrooms() != null) {
+                String bd = (String) card.get("bedrooms");
+                int bdVal = bd != null && bd.contains("bd") ? Integer.parseInt(bd.replaceAll("[^\\d]", "")) : 0;
+                if (bdVal < filter.getBedrooms()) return false;
+            }
+            if (filter.getBathrooms() != null) {
+                String ba = (String) card.get("bathrooms");
+                int baVal = ba != null && ba.contains("ba") ? Integer.parseInt(ba.replaceAll("[^\\d]", "")) : 0;
+                if (baVal < filter.getBathrooms()) return false;
+            }
+            if (filter.getMinLotSize() != null || filter.getMaxLotSize() != null) {
+                String area = (String) card.get("area");
+                int areaVal = area != null && area.contains("sqft") ? Integer.parseInt(area.replaceAll("[^\\d]", "")) : 0;
+                if (filter.getMinLotSize() != null && areaVal < filter.getMinLotSize()) return false;
+                if (filter.getMaxLotSize() != null && areaVal > filter.getMaxLotSize()) return false;
+            }
+            return true;
+        }).toList();
+        return Mono.just(Map.of("type", "FeatureCollection", "features", filtered));
+    }
+
+    @SuppressWarnings("unchecked")
     public Mono<Map<String, Object>> mockFeatureCollection(String bbox) {
 
         Map<String, Object> f1 = feature("prop-123", "GREEN", "$450K", "US$ 450,000", "901 Bagby St, Houston, TX 77002", "4bd | 3ba | 2,100 sqft", "https://cdn.gotnest.com/thumbs/prop-123-low.jpg", false, "Jay's Pick", -95.3698, 29.7604);
@@ -58,7 +105,7 @@ public class MockGeoPropertiesService {
         Map<String, Object> f43 = feature("prop-496", "YELLOW", "$600K", "US$ 600,000", "3000 W Loop N, Houston, TX 77092", "3bd | 2ba | 2,800 sqft", "https://cdn.gotnest.com/thumbs/prop-496-low.jpg", false, null, -95.5371, 29.7034);
         Map<String, Object> f44 = feature("prop-497", "RED", "$500K", "US$ 500,000", "4000 Richmond Ave, Houston, TX 77042", "2bd | 2ba | 2,300 sqft", "https://cdn.gotnest.com/thumbs/prop-497-low.jpg", false, null, -95.5371, 29.6734);
         Map<String, Object> f45 = feature("prop-498", "GREEN", "$1.8M", "US$ 1,800,000", "6000 San Felipe St, Houston, TX 77056", "5bd | 4ba | 7,000 sqft", "https://cdn.gotnest.com/thumbs/prop-498-low.jpg", true, "Jay's Pick", -95.4961, 29.7356);
-        Map<String, Object> f46 = feature("prop-499", "YELLOW", "$650K", "US$ 650,000", "7000 W Loop N, Houston, TX 77092", "3bd | 2ba | 3,000 sqft", "https://cdn.gotnest.com/thumbs/prop-499-low.jpg", false, null, -95.5371, 29.7034);
+        Map<String, Object> f46 = feature("prop-499", "YELLOW", "$650K", "US$ 650,000", "7000 W Loop N, Houston, TX 77092", "9bd | 2ba | 3,000 sqft", "https://cdn.gotnest.com/thumbs/prop-499-low.jpg", false, null, -95.5371, 29.7034);
         Map<String, Object> f47 = feature("prop-500", "RED", "$550K", "US$ 550,000", "8000 Richmond Ave, Houston, TX 77042", "2bd | 2ba | 2,500 sqft", "https://cdn.gotnest.com/thumbs/prop-500-low.jpg", false, null, -95.5371, 29.6734);
         Map<String, Object> f48 = feature("prop-501", "GREEN", "$1.9M", "US$ 1,900,000", "9000 Woodway Dr, Houston, TX 77057", "5bd | 4ba | 7,500 sqft", "https://cdn.gotnest.com/thumbs/prop-501-low.jpg", true, "Jay's Pick", -95.5234, 29.7356);
         Map<String, Object> f49 = feature("prop-502", "YELLOW", "$700K", "US$ 700,000", "10000 W Loop N, Houston, TX 77092", "3bd | 2ba | 3,200 sqft", "https://cdn.gotnest.com/thumbs/prop-502-low.jpg", false, null, -95.5371, 29.7034);
@@ -79,6 +126,7 @@ public class MockGeoPropertiesService {
 
         return Mono.just(featureCollection);
     }
+
 
     private Map<String, Object> feature(String id,
                                         String pinColor,
