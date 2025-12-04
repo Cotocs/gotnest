@@ -4,59 +4,30 @@ import com.gotnest.buyer.dto.PropertySearchFilterDTO;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class MockGeoPropertiesService {
+    private static final String FEATURE_COLLECTION = "FeatureCollection";
+    private static final String FEATURES = "features";
+    private static final String ERROR = "error";
 
-    @SuppressWarnings("unchecked")
     public Mono<Map<String, Object>> filterProperties(PropertySearchFilterDTO filter) {
         Map<String, Object> all = mockFeatureCollection("").block();
-        if (all == null) return Mono.just(Map.of("type", "FeatureCollection", "features", List.of()));
-        List<Map<String, Object>> features = (List<Map<String, Object>>) all.get("features");
-        List<Map<String, Object>> filtered = features.stream().filter(f -> {
-            Map<String, Object> props = (Map<String, Object>) f.get("properties");
-            Map<String, Object> card = (Map<String, Object>) props.get("cardData");
-            if (filter.getMinPrice() != null || filter.getMaxPrice() != null) {
-                String priceStr = ((String) card.get("fullPrice")).replaceAll("[^\\d.]", "");
-                if (!priceStr.isEmpty()) {
-                    java.math.BigDecimal price = new java.math.BigDecimal(priceStr);
-                    if (filter.getMinPrice() != null && price.compareTo(filter.getMinPrice()) < 0) return false;
-                    if (filter.getMaxPrice() != null && price.compareTo(filter.getMaxPrice()) > 0) return false;
-                }
-            }
-            if (filter.getMaxMonthlyPayment() != null) {
-                String priceStr = ((String) card.get("fullPrice")).replaceAll("[^\\d.]", "");
-                if (!priceStr.isEmpty()) {
-                    java.math.BigDecimal price = new java.math.BigDecimal(priceStr);
-                    java.math.BigDecimal monthlyPayment = price.multiply(new java.math.BigDecimal("0.005"));
-                    if (monthlyPayment.compareTo(filter.getMaxMonthlyPayment()) > 0) return false;
-                }
-            }
-            if (filter.getBedrooms() != null) {
-                String bd = (String) card.get("bedrooms");
-                int bdVal = bd != null && bd.contains("bd") ? Integer.parseInt(bd.replaceAll("[^\\d]", "")) : 0;
-                if (bdVal < filter.getBedrooms()) return false;
-            }
-            if (filter.getBathrooms() != null) {
-                String ba = (String) card.get("bathrooms");
-                int baVal = ba != null && ba.contains("ba") ? Integer.parseInt(ba.replaceAll("[^\\d]", "")) : 0;
-                if (baVal < filter.getBathrooms()) return false;
-            }
-            if (filter.getMinLotSize() != null || filter.getMaxLotSize() != null) {
-                String area = (String) card.get("area");
-                int areaVal = area != null && area.contains("sqft") ? Integer.parseInt(area.replaceAll("[^\\d]", "")) : 0;
-                if (filter.getMinLotSize() != null && areaVal < filter.getMinLotSize()) return false;
-                if (filter.getMaxLotSize() != null && areaVal > filter.getMaxLotSize()) return false;
-            }
-            return true;
-        }).toList();
-        return Mono.just(Map.of("type", "FeatureCollection", "features", filtered));
+        if (all == null) return Mono.just(emptyFeatureCollection());
+        List<Map<String, Object>> features = getFeatures(all);
+        List<Map<String, Object>> filtered = features.stream()
+                .filter(f -> matchesFilter(f, filter))
+                .collect(Collectors.toList());
+        return Mono.just(featureCollection(filtered));
     }
 
-    @SuppressWarnings("unchecked")
     public Mono<Map<String, Object>> mockFeatureCollection(String bbox) {
 
         Map<String, Object> f1 = feature("prop-123", "GREEN", "$450K", "US$ 450,000", "901 Bagby St, Houston, TX 77002", "4bd | 3ba | 2,100 sqft", "https://cdn.gotnest.com/thumbs/prop-123-low.jpg", false, "Jay's Pick", -95.3698, 29.7604);
@@ -110,24 +81,247 @@ public class MockGeoPropertiesService {
         Map<String, Object> f48 = feature("prop-501", "GREEN", "$1.9M", "US$ 1,900,000", "9000 Woodway Dr, Houston, TX 77057", "5bd | 4ba | 7,500 sqft", "https://cdn.gotnest.com/thumbs/prop-501-low.jpg", true, "Jay's Pick", -95.5234, 29.7356);
         Map<String, Object> f49 = feature("prop-502", "YELLOW", "$700K", "US$ 700,000", "10000 W Loop N, Houston, TX 77092", "3bd | 2ba | 3,200 sqft", "https://cdn.gotnest.com/thumbs/prop-502-low.jpg", false, null, -95.5371, 29.7034);
         Map<String, Object> f50 = feature("prop-503", "RED", "$600K", "US$ 600,000", "11000 Richmond Ave, Houston, TX 77042", "2bd | 2ba | 2,800 sqft", "https://cdn.gotnest.com/thumbs/prop-503-low.jpg", false, null, -95.5371, 29.6734);
+        Map<String, Object> f101 = feature("91912354", "GREEN", "$175K", "US$ 175,000", "2212 Shadowdale Drive 358, Houston, TX 77043", "3bd | 3ba | 1,964 sqft", "", false, null, -95.554112, 29.813336);
+        Map<String, Object> f102 = feature("88653053", "YELLOW", "$250K", "US$ 250,000", "6219 Reed Road, Houston, TX 77087", "4bd | 3ba | 1,820 sqft", "", false, null, -95.314333, 29.65993);
+        Map<String, Object> f103 = feature("84072393", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f104 = feature("84072394", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f105 = feature("84072395", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f106 = feature("84072396", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f107 = feature("84072397", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f108 = feature("84072398", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f109 = feature("84072399", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f110 = feature("84072400", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f111 = feature("84072401", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f112 = feature("84072402", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f113 = feature("84072403", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f114 = feature("84072404", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f115 = feature("84072405", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f116 = feature("84072406", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f117 = feature("84072407", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f118 = feature("84072408", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f119 = feature("84072409", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f120 = feature("84072410", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f121 = feature("84072411", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f122 = feature("84072412", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f123 = feature("84072413", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f124 = feature("84072414", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f125 = feature("84072415", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f126 = feature("84072416", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f127 = feature("84072417", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f128 = feature("84072418", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f129 = feature("84072419", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f130 = feature("84072420", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f131 = feature("84072421", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f132 = feature("84072422", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f133 = feature("84072423", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f134 = feature("84072424", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f135 = feature("84072425", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f136 = feature("84072426", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f137 = feature("84072427", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f138 = feature("84072428", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f139 = feature("84072429", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f140 = feature("84072430", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f141 = feature("84072431", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f142 = feature("84072432", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f143 = feature("84072433", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f144 = feature("84072434", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f145 = feature("84072435", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f146 = feature("84072436", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f147 = feature("84072437", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f148 = feature("84072438", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f149 = feature("84072439", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f150 = feature("84072440", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f151 = feature("84072441", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f152 = feature("84072442", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f153 = feature("84072443", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f154 = feature("84072444", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f155 = feature("84072445", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f156 = feature("84072446", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f157 = feature("84072447", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f158 = feature("84072448", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f159 = feature("84072449", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f160 = feature("84072450", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f161 = feature("84072451", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f162 = feature("84072452", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f163 = feature("84072453", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f164 = feature("84072454", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f165 = feature("84072455", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f166 = feature("84072456", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f167 = feature("84072457", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f168 = feature("84072458", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f169 = feature("84072459", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f170 = feature("84072460", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f171 = feature("84072461", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f172 = feature("84072462", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f173 = feature("84072463", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f174 = feature("84072464", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f175 = feature("84072465", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f176 = feature("84072466", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f177 = feature("84072467", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f178 = feature("84072468", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f179 = feature("84072469", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f180 = feature("84072470", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f181 = feature("84072471", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f182 = feature("84072472", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f183 = feature("84072473", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f184 = feature("84072474", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f185 = feature("84072475", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f186 = feature("84072476", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f187 = feature("84072477", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f188 = feature("84072478", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f189 = feature("84072479", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f190 = feature("84072480", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f191 = feature("84072481", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f192 = feature("84072482", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f193 = feature("84072483", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f194 = feature("84072484", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f195 = feature("84072485", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f196 = feature("84072486", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f197 = feature("84072487", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f198 = feature("84072488", "YELLOW", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f199 = feature("84072489", "RED", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
+        Map<String, Object> f200 = feature("84072490", "GREEN", "$---", "US$ ---", "410 Yale Oaks Ln, Houston, TX", "3bd | 3ba | 2,132 sqft", "", false, null, -95.405064, 29.813336);
 
         List<Map<String, Object>> features = List.of(
                 f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
                 f13, f14, f15, f16, f17, f18, f19, f20,
                 f21, f22, f23, f24, f25, f26, f27, f28, f29, f30,
                 f31, f32, f33, f34, f35, f36, f37, f38, f39, f40,
-                f41, f42, f43, f44, f45, f46, f47, f48, f49, f50
+                f41, f42, f43, f44, f45, f46, f47, f48, f49, f50,
+                f101, f102, f103, f104, f105, f106, f107, f108, f109, f110, f111, f112,
+                f113, f114, f115, f116, f117, f118, f119, f120, f121, f122, f123, f124,
+                f125, f126, f127, f128, f129, f130, f131, f132, f133, f134, f135, f136,
+                f137, f138, f139, f140, f141, f142, f143, f144, f145, f146, f147, f148,
+                f149, f150, f151, f152, f153, f154, f155, f156, f157, f158, f159, f160,
+                f161, f162, f163, f164, f165, f166, f167, f168, f169, f170, f171, f172,
+                f173, f174, f175, f176, f177, f178, f179, f180, f181, f182, f183, f184,
+                f185, f186, f187, f188, f189, f190, f191, f192, f193, f194, f195, f196,
+                f197, f198, f199, f200
         );
 
-        Map<String, Object> featureCollection = Map.of(
-                "type", "FeatureCollection",
-                "features", features
-        );
-
-        return Mono.just(featureCollection);
+        return Mono.just(featureCollection(features));
     }
 
+    public Mono<Map<String, Object>> searchByAddress(String query) {
+        Map<String, Object> all = mockFeatureCollection("").block();
+        if (all == null) return Mono.just(emptyFeatureCollection());
+        List<Map<String, Object>> features = getFeatures(all);
+        List<Map<String, Object>> filtered = features.stream()
+                .filter(f -> addressContains(f, query))
+                .collect(Collectors.toList());
+        if (filtered.isEmpty()) {
+            return Mono.just(Collections.singletonMap(ERROR, "We couldn’t find any property for the address you searched for."));
+        }
+        return Mono.just(featureCollection(filtered));
+    }
 
+    public Mono<Map<String, Object>> getPropertyById(String id) {
+        Map<String, Object> all = mockFeatureCollection("").block();
+        if (all == null) return Mono.just(Collections.singletonMap(ERROR, "Property not found"));
+        return getFeatures(all).stream()
+                .filter(f -> idEquals(f, id))
+                .findFirst()
+                .map(f -> {
+                    // Adiciona campo de zoom recomendado
+                    var result = new java.util.HashMap<String, Object>(f);
+                    result.put("recommendedZoom", 15);
+                    return (Map<String, Object>) result;
+                })
+                .map(Mono::just)
+                .orElseGet(() -> Mono.just(Collections.singletonMap(ERROR, "Property not found")));
+    }
+
+    private boolean matchesFilter(Map<String, Object> feature, PropertySearchFilterDTO filter) {
+        Map<String, Object> props = getProperties(feature);
+        Map<String, Object> card = getCardData(props);
+        var predicates = java.util.List.<java.util.function.Predicate<Map<String, Object>>>of(
+            f -> Optional.ofNullable(filter.getMinPrice())
+                    .map(min -> parsePrice(card.get("fullPrice")))
+                    .map(price -> price == null || price.compareTo(filter.getMinPrice()) >= 0)
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getMaxPrice())
+                    .map(max -> parsePrice(card.get("fullPrice")))
+                    .map(price -> price == null || price.compareTo(filter.getMaxPrice()) <= 0)
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getMaxMonthlyPayment())
+                    .map(max -> parsePrice(card.get("fullPrice")))
+                    .map(price -> price == null || price.multiply(java.math.BigDecimal.valueOf(0.005)).compareTo(filter.getMaxMonthlyPayment()) <= 0)
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getBedrooms())
+                    .map(bd -> parseInt(card.get("bedrooms")))
+                    .map(bdVal -> bdVal >= filter.getBedrooms())
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getBathrooms())
+                    .map(ba -> parseInt(card.get("bathrooms")))
+                    .map(baVal -> baVal >= filter.getBathrooms())
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getMinLotSize())
+                    .map(min -> parseInt(card.get("area")))
+                    .map(areaVal -> areaVal >= filter.getMinLotSize())
+                    .orElse(true),
+            f -> Optional.ofNullable(filter.getMaxLotSize())
+                    .map(max -> parseInt(card.get("area")))
+                    .map(areaVal -> areaVal <= filter.getMaxLotSize())
+                    .orElse(true)
+        );
+        return predicates.stream().allMatch(p -> p.test(feature));
+    }
+
+    private boolean addressContains(Map<String, Object> feature, String query) {
+        Map<String, Object> props = getProperties(feature);
+        Map<String, Object> card = getCardData(props);
+        String address = Objects.toString(card.get("address"), "");
+        return address.toLowerCase().contains(query.toLowerCase());
+    }
+
+    private boolean idEquals(Map<String, Object> feature, String id) {
+        Map<String, Object> props = getProperties(feature);
+        return Objects.equals(props.get("id"), id);
+    }
+
+    private Map<String, Object> getProperties(Map<String, Object> feature) {
+        return (Map<String, Object>) feature.get("properties");
+    }
+
+    private Map<String, Object> getCardData(Map<String, Object> props) {
+        return (Map<String, Object>) props.get("cardData");
+    }
+
+    private List<Map<String, Object>> getFeatures(Map<String, Object> featureCollection) {
+        return (List<Map<String, Object>>) featureCollection.get(FEATURES);
+    }
+
+    private Map<String, Object> featureCollection(List<Map<String, Object>> features) {
+        return Map.of("type", FEATURE_COLLECTION, FEATURES, features);
+    }
+
+    private Map<String, Object> emptyFeatureCollection() {
+        return Map.of("type", FEATURE_COLLECTION, FEATURES, List.of());
+    }
+
+    private BigDecimal parsePrice(Object priceObj) {
+        if (priceObj == null) return null;
+        String priceStr = priceObj.toString().replaceAll("[^\\d.]", "");
+        if (priceStr.isEmpty()) return null;
+        try {
+            return new BigDecimal(priceStr);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private int parseInt(Object value) {
+        if (value == null) return 0;
+        String str = value.toString().replaceAll("[^\\d]", "");
+        if (str.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(str);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
     private Map<String, Object> feature(String id,
                                         String pinColor,
                                         String priceShort,
