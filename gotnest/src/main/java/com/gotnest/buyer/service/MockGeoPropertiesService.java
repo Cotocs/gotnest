@@ -7,7 +7,13 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 
 
@@ -246,13 +252,13 @@ public class MockGeoPropertiesService {
         // Realiza a busca por endereço e adiciona bbox+count baseado nos recursos
         return searchByAddress(query)
             .map(featureCollectionOrig -> {
-                var featureCollection = new java.util.HashMap<>(featureCollectionOrig);
-                java.util.List<java.util.Map<String, Object>> features = getFeatures(featureCollection);
+                var featureCollection = new HashMap<>(featureCollectionOrig);
+                List<Map<String, Object>> features = getFeatures(featureCollection);
                 double minLon = Double.POSITIVE_INFINITY, minLat = Double.POSITIVE_INFINITY;
                 double maxLon = Double.NEGATIVE_INFINITY, maxLat = Double.NEGATIVE_INFINITY;
                 for (var feature : features) {
-                    java.util.Map<String, Object> geometry = getGeometry(feature);
-                    java.util.List<?> coords = (java.util.List<?>) geometry.get("coordinates");
+                    Map<String, Object> geometry = getGeometry(feature);
+                    List<?> coords = (List<?>) geometry.get("coordinates");
                     double lon = ((Number) coords.get(0)).doubleValue();
                     double lat = ((Number) coords.get(1)).doubleValue();
                     if (lon < minLon) minLon = lon;
@@ -261,27 +267,27 @@ public class MockGeoPropertiesService {
                     if (lat > maxLat) maxLat = lat;
                 }
                 if (!features.isEmpty()) {
-                    featureCollection.put("bbox", java.util.List.of(minLon, minLat, maxLon, maxLat));
+                    featureCollection.put("bbox", List.of(minLon, minLat, maxLon, maxLat));
                 }
                 featureCollection.put("count", features.size());
                 return featureCollection;
             });
     }
 
-    public Mono<Map<String, Object>> searchByAddressWithFilters(String query, com.gotnest.buyer.dto.PropertySearchFilterDTO filter) {
+    public Mono<Map<String, Object>> searchByAddressWithFilters(String query, PropertySearchFilterDTO filter) {
         return searchByAddress(query)
             .map(featureCollectionOrig -> {
-                var featureCollection = new java.util.HashMap<>(featureCollectionOrig);
-                java.util.List<java.util.Map<String, Object>> features = getFeatures(featureCollection);
-                java.util.List<java.util.Map<String, Object>> filtered = features.stream()
+                var featureCollection = new HashMap<>(featureCollectionOrig);
+                List<Map<String, Object>> features = getFeatures(featureCollection);
+                List<Map<String, Object>> filtered = features.stream()
                         .filter(f -> matchesFilter(f, filter))
                         .toList();
 
                 double minLon = Double.POSITIVE_INFINITY, minLat = Double.POSITIVE_INFINITY;
                 double maxLon = Double.NEGATIVE_INFINITY, maxLat = Double.NEGATIVE_INFINITY;
                 for (var feature : filtered) {
-                    java.util.Map<String, Object> geometry = getGeometry(feature);
-                    java.util.List<?> coords = (java.util.List<?>) geometry.get("coordinates");
+                    Map<String, Object> geometry = getGeometry(feature);
+                    List<?> coords = (List<?>) geometry.get("coordinates");
                     double lon = ((Number) coords.get(0)).doubleValue();
                     double lat = ((Number) coords.get(1)).doubleValue();
                     if (lon < minLon) minLon = lon;
@@ -289,11 +295,11 @@ public class MockGeoPropertiesService {
                     if (lat < minLat) minLat = lat;
                     if (lat > maxLat) maxLat = lat;
                 }
-                var result = new java.util.HashMap<String, Object>();
+                var result = new HashMap<String, Object>();
                 result.put("type", FEATURE_COLLECTION);
                 result.put(FEATURES, filtered);
                 if (!filtered.isEmpty()) {
-                    result.put("bbox", java.util.List.of(minLon, minLat, maxLon, maxLat));
+                    result.put("bbox", List.of(minLon, minLat, maxLon, maxLat));
                 }
                 result.put("count", filtered.size());
                 return result;

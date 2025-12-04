@@ -26,7 +26,6 @@ public class GlobalExceptionHandler {
                 (ex.getReason() != null ? ex.getReason() : ex.getStatusCode().toString());
         body.put("error", error);
         if (ex.getStatusCode() == HttpStatus.UNPROCESSABLE_ENTITY) {
-            // Diferenciar mensagens 422 conforme o tipo de erro
             String reason = ex.getReason() != null ? ex.getReason() : "";
             if (reason.contains("location available")) {
                 body.put("message", "We don’t have this location available at the moment. Please check other locations.");
