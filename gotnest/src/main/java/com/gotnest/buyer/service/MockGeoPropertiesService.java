@@ -208,7 +208,6 @@ public class MockGeoPropertiesService {
         geometry.put("coordinates", List.of(lon, lat));
 
         Map<String, Object> cardData = new HashMap<>();
-        // separo bedrooms/ba/area em cardData apenas como exemplo; seus campos reais podem variar
         cardData.put("address", address);
         cardData.put("imageUrl", imageUrl);
         cardData.put("isFavorited", false);
@@ -235,6 +234,10 @@ public class MockGeoPropertiesService {
         fc.put("type", "FeatureCollection");
         fc.put("features", features);
         return fc;
+    }
+
+    private Map<String, Object> emptyFeatureCollection() {
+        return featureCollection(Collections.emptyList());
     }
 
     // helpers usados por outros métodos no serviço
@@ -311,76 +314,175 @@ public class MockGeoPropertiesService {
         }
     }
 
-    public Mono<Map<String, Object>> searchByAddress(String query) {
+    private boolean matchesFilter(Map<String, Object> feature, PropertySearchFilterDTO filter) {
+        Map<String, Object> props = getProperties(feature);
+        Map<String, Object> card = getCardData(props);
+
+        // Extrair os dados da string de detalhes (formato: "2bd | 2ba | 1,027 sqft")
+        String details = (String) card.get("area");
+        int propertyBedrooms = extractBedroomsFromDetails(details);
+        int propertyBathrooms = extractBathroomsFromDetails(details);
+        int propertyArea = extractAreaFromDetails(details);
+
+        var predicates = List.<java.util.function.Predicate<Map<String, Object>>>of(
+                f -> Optional.ofNullable(filter.getMinPrice())
+                        .map(min -> parsePriceFromObject(card.get("fullPrice")))
+                        .map(price -> price.compareTo(filter.getMinPrice()) >= 0)
+                        .orElse(true),
+                f -> Optional.ofNullable(filter.getMaxPrice())
+                        .map(max -> parsePriceFromObject(card.get("fullPrice")))
+                        .map(price -> price.compareTo(filter.getMaxPrice()) <= 0)
+                        .orElse(true),
+                f -> Optional.ofNullable(filter.getMaxMonthlyPayment())
+                        .map(max -> parsePriceFromObject(card.get("fullPrice")))
+                        .map(price -> price.multiply(BigDecimal.valueOf(0.005)).compareTo(filter.getMaxMonthlyPayment()) <= 0)
+                        .orElse(true),
+                f -> {
+                    if (filter.getBedrooms() == null) return true;
+                    // Se o filtro for >= 6, considera todas as propriedades com 6 ou mais quartos
+                    if (filter.getBedrooms() >= 6) {
+                        return propertyBedrooms >= 6;
+                    }
+                    // Caso contrário, busca o valor exato ou maior
+                    return propertyBedrooms >= filter.getBedrooms();
+                },
+                f -> {
+                    if (filter.getBathrooms() == null) return true;
+                    // Se o filtro for >= 6, considera todas as propriedades com 6 ou mais banheiros
+                    if (filter.getBathrooms() >= 6) {
+                        return propertyBathrooms >= 6;
+                    }
+                    // Caso contrário, busca o valor exato ou maior
+                    return propertyBathrooms >= filter.getBathrooms();
+                },
+                f -> Optional.ofNullable(filter.getMinLotSize())
+                        .map(min -> propertyArea >= min)
+                        .orElse(true),
+                f -> Optional.ofNullable(filter.getMaxLotSize())
+                        .map(max -> propertyArea <= max)
+                        .orElse(true),
+                f -> {
+                    if (filter.getAddress() == null || filter.getAddress().isBlank()) return true;
+                    String propertyAddress = (String) card.get("address");
+                    if (propertyAddress == null) return false;
+                    // Busca case-insensitive: verifica se o endereço da propriedade contém o texto buscado
+                    return propertyAddress.toLowerCase().contains(filter.getAddress().toLowerCase());
+                }
+        );
+        return predicates.stream().allMatch(p -> p.test(feature));
+    }
+
+    private Map<String, Object> getCardData(Map<String, Object> props) {
+        Object obj = props.get("cardData");
+        if (obj instanceof Map<?, ?> map) {
+            return new HashMap<>((Map<String, Object>) map);
+        }
+        return Map.of();
+    }
+
+
+    private int extractBedroomsFromDetails(String details) {
+        if (details == null) return 0;
+        // Formato esperado: "2bd | 2ba | 1,027 sqft"
+        Pattern pattern = Pattern.compile("(\\d+)bd");
+        Matcher matcher = pattern.matcher(details);
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+        return 0;
+    }
+
+    private int extractBathroomsFromDetails(String details) {
+        if (details == null) return 0;
+        // Formato esperado: "2bd | 2ba | 1,027 sqft"
+        Pattern pattern = Pattern.compile("(\\d+)ba");
+        Matcher matcher = pattern.matcher(details);
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+        return 0;
+    }
+
+    private int extractAreaFromDetails(String details) {
+        if (details == null) return 0;
+        // Formato esperado: "2bd | 2ba | 1,027 sqft"
+        Pattern pattern = Pattern.compile("([\\d,]+)\\s*sqft");
+        Matcher matcher = pattern.matcher(details);
+        if (matcher.find()) {
+            String areaStr = matcher.group(1).replaceAll(",", "");
+            try {
+                return Integer.parseInt(areaStr);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private BigDecimal parsePriceFromObject(Object priceObj) {
+        if (priceObj == null) return BigDecimal.ZERO;
+        String str = priceObj.toString().replaceAll("[^0-9.]", "");
+        if (str.isEmpty()) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(str.replaceAll(",", ""));
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+
+    public Mono<Map<String, Object>> filterPropertiesByCriteria(PropertySearchFilterDTO filter) {
+        Map<String, Object> all = mockFeatureCollection().block();
+        if (all == null) return Mono.just(emptyFeatureCollection());
+        List<Map<String, Object>> features = getFeatures(all);
+        List<Map<String, Object>> filtered = features.stream()
+                .filter(f -> matchesFilter(f, filter))
+                .toList();
+        return Mono.just(featureCollection(filtered));
+    }
+
+    private BigDecimal calculateMonthlyPayment(BigDecimal price) {
+        // Implementação fictícia para calcular o pagamento mensal
+        BigDecimal interestRate = new BigDecimal("0.05"); // Taxa de juros de 5%
+        int loanTermMonths = 360; // Prazo do empréstimo de 30 anos
+        BigDecimal monthlyRate = interestRate.divide(new BigDecimal("12"), BigDecimal.ROUND_HALF_UP);
+        return price.multiply(monthlyRate).divide(BigDecimal.ONE.subtract(BigDecimal.ONE.divide(
+                BigDecimal.ONE.add(monthlyRate).pow(loanTermMonths), BigDecimal.ROUND_HALF_UP)), BigDecimal.ROUND_HALF_UP);
+    }
+
+    public Mono<Map<String, Object>> searchProperties(Integer minBedrooms, Integer minBathrooms) {
         Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) return Mono.just(featureCollection(Collections.emptyList()));
+
         List<Map<String, Object>> features = getFeatures(all);
         List<Map<String, Object>> filtered = features.stream()
                 .filter(f -> {
                     Map<String, Object> p = getProperties(f);
                     Object cardData = p.get("cardData");
                     if (cardData instanceof Map) {
-                        Object address = ((Map<?, ?>) cardData).get("address");
-                        if (address != null) {
-                            return Objects.toString(address, "").toLowerCase().contains(query.toLowerCase());
+                        Object details = ((Map<?, ?>) cardData).get("area");
+                        if (details != null) {
+                            String detailsStr = details.toString();
+                            int bedrooms = extractNumber(detailsStr, "bd");
+                            int bathrooms = extractNumber(detailsStr, "ba");
+
+                            return (minBedrooms == null || bedrooms >= minBedrooms) &&
+                                    (minBathrooms == null || bathrooms >= minBathrooms);
                         }
                     }
                     return false;
                 }).collect(Collectors.toList());
-        if (filtered.isEmpty()) {
-            throw new AddressNotFoundException();
-        }
+
         return Mono.just(featureCollection(filtered));
     }
 
-    // Renomeei o método duplicado para evitar conflito e inicializei a variável "features".
-
-    // Lista de propriedades mockadas
-    private static final List<Map<String, Object>> features = Arrays.asList(
-        feature("prop-123", "GREEN", "$450K", "US$ 450,000", "901 Bagby St, Houston, TX 77002", "4bd | 3ba | 2,100 sqft", DEFAULT_PROPERTY_IMAGE, false, "Jay's Pick", -95.3698, 29.7604),
-        feature("prop-456", "YELLOW", "$380K", "US$ 380,000", "600 Travis St, Houston, TX 77002", "3bd | 2ba | 1,600 sqft", DEFAULT_PROPERTY_IMAGE, true, null, -95.3657, 29.7601)
-        // ... outras propriedades
-    );
-
-    public Mono<Map<String, Object>> filterPropertiesByCriteria(PropertySearchFilterDTO filter) {
-        List<Map<String, Object>> filteredFeatures = features.stream()
-        .filter(feature -> {
-            Map<String, Object> properties = getProperties(feature);
-            Map<String, Object> cardData = (Map<String, Object>) properties.get("cardData");
-
-            // Filtrar por preço mínimo e máximo
-            BigDecimal price = parsePrice((String) cardData.get("fullPrice"));
-            if (filter.getMinPrice() != null && price.compareTo(filter.getMinPrice()) < 0) {
-                return false;
-            }
-            if (filter.getMaxPrice() != null && price.compareTo(filter.getMaxPrice()) > 0) {
-                return false;
-            }
-
-            // Filtrar por número de quartos e banheiros
-            String details = (String) cardData.get("area");
-            PropertySearchFilterDTO extractedFilter = PropertySearchFilterDTO.fromFormattedString(details);
-            if (filter.getBedrooms() != null && !filter.getBedrooms().equals(extractedFilter.getBedrooms())) {
-                return false;
-            }
-            if (filter.getBathrooms() != null && !filter.getBathrooms().equals(extractedFilter.getBathrooms())) {
-                return false;
-            }
-
-            // Filtrar por tamanho do lote
-            if (filter.getMinLotSize() != null && extractedFilter.getMinLotSize() < filter.getMinLotSize()) {
-                return false;
-            }
-            if (filter.getMaxLotSize() != null && extractedFilter.getMinLotSize() > filter.getMaxLotSize()) {
-                return false;
-            }
-
-            return true;
-        })
-        .toList();
-
-        return Mono.just(featureCollection(filteredFeatures));
+    private int extractNumber(String details, String key) {
+        try {
+            int start = details.indexOf(key) - 2;
+            return Integer.parseInt(details.substring(start, start + 1).trim());
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
-    // outros métodos do serviço foram omitidos aqui por brevidade (mas podem permanecer como no seu projeto original)
 }
