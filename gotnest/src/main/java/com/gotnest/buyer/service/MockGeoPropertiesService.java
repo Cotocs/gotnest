@@ -293,16 +293,110 @@ public class MockGeoPropertiesService {
 
     // Exemplos de métodos existentes no seu service que deixei inalterados na maior parte:
     public Mono<Map<String, Object>> getPropertyById(String id) {
-        // mock simples de detalhe
         Map<String, Object> all = mockFeatureCollection().block();
+        if (all == null) throw new AddressNotFoundException();
+
         List<Map<String, Object>> features = getFeatures(all);
+
+        // Buscar a propriedade pelo ID
+        Map<String, Object> targetProperty = null;
         for (Map<String, Object> f : features) {
             Map<String, Object> props = getProperties(f);
             if (Objects.equals(props.get("id"), id)) {
-                return Mono.just(f);
+                targetProperty = f;
+                break;
             }
         }
-        throw new AddressNotFoundException();
+
+        if (targetProperty == null) {
+            throw new AddressNotFoundException();
+        }
+
+        // Obter coordenadas da propriedade buscada
+        Map<String, Object> targetGeometry = getGeometry(targetProperty);
+        List<?> targetCoords = (List<?>) targetGeometry.get("coordinates");
+        double targetLon = ((Number) targetCoords.get(0)).doubleValue();
+        double targetLat = ((Number) targetCoords.get(1)).doubleValue();
+
+        // Criar lista de propriedades próximas ordenadas por distância
+        List<Map<String, Object>> nearbyProperties = features.stream()
+            .filter(f -> {
+                Map<String, Object> props = getProperties(f);
+                return !Objects.equals(props.get("id"), id); // Excluir a propriedade buscada
+            })
+            .map(f -> {
+                Map<String, Object> geometry = getGeometry(f);
+                List<?> coords = (List<?>) geometry.get("coordinates");
+                double lon = ((Number) coords.get(0)).doubleValue();
+                double lat = ((Number) coords.get(1)).doubleValue();
+
+                // Calcular distância
+                double distance = calculateDistance(targetLat, targetLon, lat, lon);
+
+                Map<String, Object> propertyWithDistance = new HashMap<>(f);
+                propertyWithDistance.put("_distance", distance);
+                return propertyWithDistance;
+            })
+            .sorted((p1, p2) -> {
+                double d1 = (double) p1.get("_distance");
+                double d2 = (double) p2.get("_distance");
+                return Double.compare(d1, d2);
+            })
+            .limit(10) // Limitar a 10 propriedades próximas
+            .collect(Collectors.toList());
+
+        // Montar lista de resultados: propriedade buscada + propriedades próximas
+        List<Map<String, Object>> results = new ArrayList<>();
+        results.add(targetProperty);
+        nearbyProperties.forEach(p -> {
+            p.remove("_distance"); // Remover campo auxiliar de distância
+            results.add(p);
+        });
+
+        // Limpar e retornar apenas os campos necessários
+        List<Map<String, Object>> cleanResults = results.stream()
+            .map(f -> {
+                Map<String, Object> props = getProperties(f);
+                Map<String, Object> cleanResponse = new HashMap<>();
+
+                // Adicionar geometry
+                cleanResponse.put("geometry", f.get("geometry"));
+
+                // Criar properties limpo com apenas id e cardData
+                Map<String, Object> cleanProperties = new HashMap<>();
+                cleanProperties.put("id", props.get("id"));
+                cleanProperties.put("cardData", props.get("cardData"));
+
+                cleanResponse.put("properties", cleanProperties);
+                return cleanResponse;
+            })
+            .collect(Collectors.toList());
+
+        // Retornar a lista completa (propriedade buscada + próximas)
+        Map<String, Object> response = new HashMap<>();
+        response.put("results", cleanResults);
+        response.put("total", cleanResults.size());
+
+        return Mono.just(response);
+    }
+
+    /**
+     * Calcula a distância entre dois pontos geográficos usando a fórmula de Haversine
+     * @return distância em quilômetros
+     */
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int EARTH_RADIUS_KM = 6371;
+
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return EARTH_RADIUS_KM * c;
     }
 
     private BigDecimal parsePrice(String priceString) {
@@ -438,6 +532,12 @@ public class MockGeoPropertiesService {
         List<Map<String, Object>> filtered = features.stream()
                 .filter(f -> matchesFilter(f, filter))
                 .toList();
+
+        // Se o filtro tem endereço e não encontrou nenhuma propriedade, lança exceção
+        if (filtered.isEmpty() && filter.getAddress() != null && !filter.getAddress().isBlank()) {
+            throw new AddressNotFoundException();
+        }
+
         return Mono.just(featureCollection(filtered));
     }
 
