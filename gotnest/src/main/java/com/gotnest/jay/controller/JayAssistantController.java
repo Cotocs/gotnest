@@ -16,7 +16,7 @@ public class JayAssistantController {
 
     private final JayAssistantService jayAssistantService;
 
-    @PostMapping("/chat/init")
+    @PostMapping("/chat")
     public Mono<ResponseEntity<JayChatInitResponseDTO>> initializeChat() {
         JayChatInitResponseDTO response = jayAssistantService.initializeChat();
         return Mono.just(ResponseEntity.ok(response));
