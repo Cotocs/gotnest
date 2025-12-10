@@ -1,4 +1,4 @@
-package com.gotnest.buyer.dto;
+package com.gotnest.jay.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

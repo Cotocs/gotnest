@@ -1,7 +1,7 @@
-package com.gotnest.buyer.service;
+package com.gotnest.jay.service;
 
-import com.gotnest.buyer.dto.JayChatInitResponseDTO;
-import com.gotnest.buyer.dto.JayMessageDTO;
+import com.gotnest.jay.dto.JayChatInitResponseDTO;
+import com.gotnest.jay.dto.JayMessageDTO;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;

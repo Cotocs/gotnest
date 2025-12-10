@@ -1,7 +1,7 @@
-package com.gotnest.buyer.controller;
+package com.gotnest.jay.controller;
 
-import com.gotnest.buyer.dto.JayChatInitResponseDTO;
-import com.gotnest.buyer.service.JayAssistantService;
+import com.gotnest.jay.dto.JayChatInitResponseDTO;
+import com.gotnest.jay.service.JayAssistantService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
