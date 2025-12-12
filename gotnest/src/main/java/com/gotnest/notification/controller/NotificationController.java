@@ -2,6 +2,7 @@ package com.gotnest.notification.controller;
 
 import com.gotnest.notification.dto.NotificationListResponseDTO;
 import com.gotnest.notification.service.NotificationService;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +19,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @GetMapping(path = "/user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<NotificationListResponseDTO> getUserNotifications(@PathVariable String userId) {
+    public Mono<@NonNull NotificationListResponseDTO> getUserNotifications(@PathVariable String userId) {
         return Mono.fromCallable(() -> notificationService.getUserNotifications(userId));
     }
 }
