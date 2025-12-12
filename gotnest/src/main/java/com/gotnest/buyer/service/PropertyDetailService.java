@@ -20,21 +20,17 @@ public class PropertyDetailService {
                 .map(featureCollection -> {
                     List<Map<String, Object>> features = propertyMapper.getFeatures(featureCollection);
 
-                    // Find target property
                     Map<String, Object> targetProperty = findPropertyById(features, propertyId);
                     if (targetProperty == null) {
                         throw new AddressNotFoundException();
                     }
 
-                    // Get nearby properties
                     List<Map<String, Object>> nearbyProperties = findNearbyProperties(features, targetProperty, propertyId);
 
-                    // Build results
                     List<Map<String, Object>> results = new ArrayList<>();
                     results.add(targetProperty);
                     results.addAll(nearbyProperties);
 
-                    // Clean and format results
                     List<Map<String, Object>> cleanResults = propertyMapper.toCleanResults(results);
 
                     Map<String, Object> response = new HashMap<>();
@@ -60,13 +56,11 @@ public class PropertyDetailService {
             Map<String, Object> targetProperty,
             String targetPropertyId) {
 
-        // Get target coordinates
         Map<String, Object> targetGeometry = propertyMapper.getGeometry(targetProperty);
         List<?> targetCoords = (List<?>) targetGeometry.get("coordinates");
         double targetLon = ((Number) targetCoords.get(0)).doubleValue();
         double targetLat = ((Number) targetCoords.get(1)).doubleValue();
 
-        // Find and sort nearby properties by distance
         return allFeatures.stream()
                 .filter(f -> {
                     Map<String, Object> props = propertyMapper.getProperties(f);

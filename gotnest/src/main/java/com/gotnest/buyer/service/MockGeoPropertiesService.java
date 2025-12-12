@@ -10,8 +10,7 @@ public class MockGeoPropertiesService {
     private static final String DEFAULT_PROPERTY_IMAGE = "https://fastly.picsum.photos/id/49/1280/792.jpg?hmac=NnUJy0O9-pXHLmY2loqVs2pJmgw9xzuixgYOk4ALCXU";
 
     public Mono<Map<String, Object>> mockFeatureCollection() {
-        // --- NOTE: neste exemplo reduzido, eu crio apenas alguns features para manter o exemplo enxuto.
-        // Você pode manter ou reusar a versão extensa que já tem no seu código.
+
         Map<String, Object> f1 = feature("prop-123", "GREEN", "$450K", "US$ 450,000", "901 Bagby St, Houston, TX 77002", "4bd | 3ba | 2,100 sqft", DEFAULT_PROPERTY_IMAGE, false, "Jay's Pick", -95.3698, 29.7604);
         Map<String, Object> f2 = feature("prop-456", "YELLOW", "$380K", "US$ 380,000", "600 Travis St, Houston, TX 77002", "3bd | 2ba | 1,600 sqft", DEFAULT_PROPERTY_IMAGE, true, null, -95.3657, 29.7601);
         Map<String, Object> f3 = feature("prop-457", "RED", "$520K", "US$ 520,000", "1200 Louisiana St, Houston, TX 77002", "2bd | 2ba | 1,350 sqft", DEFAULT_PROPERTY_IMAGE, false, null, -95.3692, 29.7574);
@@ -211,9 +210,6 @@ public class MockGeoPropertiesService {
         return feature;
     }
 
-    /**
-     * Creates a feature collection wrapper.
-     */
     private Map<String, Object> featureCollection(List<Map<String, Object>> features) {
         Map<String, Object> fc = new HashMap<>();
         fc.put("type", "FeatureCollection");

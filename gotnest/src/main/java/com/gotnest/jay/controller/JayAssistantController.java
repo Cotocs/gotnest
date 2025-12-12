@@ -2,6 +2,7 @@ package com.gotnest.jay.controller;
 
 import com.gotnest.jay.dto.JayChatInitResponseDTO;
 import com.gotnest.jay.service.JayAssistantService;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,7 +19,7 @@ public class JayAssistantController {
     private final JayAssistantService jayAssistantService;
 
     @PostMapping(path = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<JayChatInitResponseDTO> initializeChat() {
+    public Mono<@NonNull JayChatInitResponseDTO> initializeChat() {
         return Mono.fromCallable(jayAssistantService::initializeChat);
     }
 }

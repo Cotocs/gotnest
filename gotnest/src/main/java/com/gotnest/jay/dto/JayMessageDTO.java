@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class JayMessageDTO {
     private String message;
-    private String sender; // "jay" or "user"
+    private String sender;
     private LocalDateTime timestamp;
 }
 
