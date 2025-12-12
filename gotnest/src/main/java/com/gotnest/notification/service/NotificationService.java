@@ -13,7 +13,6 @@ import java.util.UUID;
 public class NotificationService {
 
     public NotificationListResponseDTO getUserNotifications(String userId) {
-        // Mock data - based on the image provided
         List<NotificationDTO> notifications = Arrays.asList(
                 NotificationDTO.builder()
                         .id(UUID.randomUUID().toString())
