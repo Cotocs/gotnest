@@ -16,16 +16,6 @@ import java.util.stream.Collectors;
 public class MockGeoPropertiesService {
     private static final String DEFAULT_PROPERTY_IMAGE = "https://fastly.picsum.photos/id/49/1280/792.jpg?hmac=NnUJy0O9-pXHLmY2loqVs2pJmgw9xzuixgYOk4ALCXU";
 
-    // constants usados por outros métodos (mantidos)
-    private static final double HOUSTON_MIN_LON = -95.7;
-    private static final double HOUSTON_MIN_LAT = 29.6;
-    private static final double HOUSTON_MAX_LON = -95.1;
-    private static final double HOUSTON_MAX_LAT = 29.95;
-
-    // --- métodos antigos mantidos (filter, mockFeatureCollection, searchByAddress, etc.)
-    // Para simplicidade neste snippet, mantenho mockFeatureCollection() existente e o resto do comportamento.
-    // O importante aqui é o novo método simplifiedFeatureCollection() e a sanitização.
-
     public Mono<Map<String, Object>> mockFeatureCollection() {
         // --- NOTE: neste exemplo reduzido, eu crio apenas alguns features para manter o exemplo enxuto.
         // Você pode manter ou reusar a versão extensa que já tem no seu código.
@@ -199,7 +189,6 @@ public class MockGeoPropertiesService {
         return Mono.just(featureCollection(features));
     }
 
-    // Exemplo de método auxiliar que cria a estrutura de feature (type, geometry, properties)
     private static Map<String, Object> feature(String id, String pinColor, String priceShort, String fullPrice, String address,
                                                String details, String imageUrl, boolean cluster, String badge,
                                                double lon, double lat) {
@@ -209,7 +198,7 @@ public class MockGeoPropertiesService {
 
         Map<String, Object> cardData = new HashMap<>();
         cardData.put("address", address);
-        cardData.put("imageUrl", imageUrl);
+        cardData.put("imageUrl", DEFAULT_PROPERTY_IMAGE);
         cardData.put("isFavorited", false);
         cardData.put("fullPrice", fullPrice);
         cardData.put("area", details);
@@ -240,8 +229,6 @@ public class MockGeoPropertiesService {
         return featureCollection(Collections.emptyList());
     }
 
-    // helpers usados por outros métodos no serviço
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getFeatures(Map<String, Object> featureCollection) {
         Object features = featureCollection.get("features");
         if (features instanceof List) {
@@ -250,23 +237,23 @@ public class MockGeoPropertiesService {
         return Collections.emptyList();
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> getGeometry(Map<String, Object> feature) {
         Object g = feature.get("geometry");
         if (g instanceof Map) return (Map<String, Object>) g;
         return Map.of();
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> getProperties(Map<String, Object> feature) {
         Object p = feature.get("properties");
         if (p instanceof Map) return (Map<String, Object>) p;
         return Map.of();
     }
 
-    // --- NOVO: retorna coleção simplificada com o contrato desejado
     public Mono<Map<String, Object>> simplifiedFeatureCollection() {
         Map<String, Object> full = mockFeatureCollection().block();
+        if (full == null) {
+            return Mono.just(Map.of("features", Collections.emptyList()));
+        }
         List<Map<String, Object>> features = getFeatures(full);
         List<Map<String, Object>> simpleFeatures = features.stream().map(f -> {
             Map<String, Object> props = getProperties(f);
@@ -281,17 +268,6 @@ public class MockGeoPropertiesService {
         return Mono.just(Map.of("features", simpleFeatures));
     }
 
-    // simples sanitização para remover tags HTML e espaços
-    private String sanitize(String in) {
-        if (in == null) return null;
-        // remove tags HTML básicas
-        String out = in.replaceAll("<[^>]*>", "");
-        // remove entidades HTML comuns (poderia expandir se necessário)
-        out = out.replace("&nbsp;", " ");
-        return out.trim();
-    }
-
-    // Exemplos de métodos existentes no seu service que deixei inalterados na maior parte:
     public Mono<Map<String, Object>> getPropertyById(String id) {
         Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) throw new AddressNotFoundException();
@@ -342,35 +318,31 @@ public class MockGeoPropertiesService {
                 double d2 = (double) p2.get("_distance");
                 return Double.compare(d1, d2);
             })
-            .limit(10) // Limitar a 10 propriedades próximas
-            .collect(Collectors.toList());
+            .limit(10)
+            .toList();
 
-        // Montar lista de resultados: propriedade buscada + propriedades próximas
         List<Map<String, Object>> results = new ArrayList<>();
         results.add(targetProperty);
         nearbyProperties.forEach(p -> {
-            p.remove("_distance"); // Remover campo auxiliar de distância
-            results.add(p);
-        });
+                        p.remove("_distance");
+                        results.add(p);
+                    });
 
-        // Limpar e retornar apenas os campos necessários
-        List<Map<String, Object>> cleanResults = results.stream()
-            .map(f -> {
-                Map<String, Object> props = getProperties(f);
-                Map<String, Object> cleanResponse = new HashMap<>();
+            List<Map<String, Object>> cleanResults = results.stream()
+                .map(f -> {
+                    Map<String, Object> props = getProperties(f);
+                    Map<String, Object> cleanResponse = new HashMap<>();
 
-                // Adicionar geometry
-                cleanResponse.put("geometry", f.get("geometry"));
+                    cleanResponse.put("geometry", f.get("geometry"));
 
-                // Criar properties limpo com apenas id e cardData
-                Map<String, Object> cleanProperties = new HashMap<>();
-                cleanProperties.put("id", props.get("id"));
-                cleanProperties.put("cardData", props.get("cardData"));
+                    Map<String, Object> cleanProperties = new HashMap<>();
+                    cleanProperties.put("id", props.get("id"));
+                    cleanProperties.put("cardData", props.get("cardData"));
 
-                cleanResponse.put("properties", cleanProperties);
-                return cleanResponse;
-            })
-            .collect(Collectors.toList());
+                    cleanResponse.put("properties", cleanProperties);
+                    return cleanResponse;
+                })
+                .toList();
 
         // Retornar a lista completa (propriedade buscada + próximas)
         Map<String, Object> response = new HashMap<>();
@@ -380,10 +352,6 @@ public class MockGeoPropertiesService {
         return Mono.just(response);
     }
 
-    /**
-     * Calcula a distância entre dois pontos geográficos usando a fórmula de Haversine
-     * @return distância em quilômetros
-     */
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         final int EARTH_RADIUS_KM = 6371;
 
@@ -399,20 +367,11 @@ public class MockGeoPropertiesService {
         return EARTH_RADIUS_KM * c;
     }
 
-    private BigDecimal parsePrice(String priceString) {
-        try {
-            String numeric = priceString.replaceAll("[^0-9.]", "");
-            return new BigDecimal(numeric);
-        } catch (Exception e) {
-            return BigDecimal.ZERO;
-        }
-    }
 
     private boolean matchesFilter(Map<String, Object> feature, PropertySearchFilterDTO filter) {
         Map<String, Object> props = getProperties(feature);
         Map<String, Object> card = getCardData(props);
 
-        // Extrair os dados da string de detalhes (formato: "2bd | 2ba | 1,027 sqft")
         String details = (String) card.get("area");
         int propertyBedrooms = extractBedroomsFromDetails(details);
         int propertyBathrooms = extractBathroomsFromDetails(details);
@@ -433,20 +392,16 @@ public class MockGeoPropertiesService {
                         .orElse(true),
                 f -> {
                     if (filter.getBedrooms() == null) return true;
-                    // Se o filtro for >= 6, considera todas as propriedades com 6 ou mais quartos
                     if (filter.getBedrooms() >= 6) {
                         return propertyBedrooms >= 6;
                     }
-                    // Caso contrário, busca o valor exato ou maior
                     return propertyBedrooms >= filter.getBedrooms();
                 },
                 f -> {
                     if (filter.getBathrooms() == null) return true;
-                    // Se o filtro for >= 6, considera todas as propriedades com 6 ou mais banheiros
                     if (filter.getBathrooms() >= 6) {
                         return propertyBathrooms >= 6;
                     }
-                    // Caso contrário, busca o valor exato ou maior
                     return propertyBathrooms >= filter.getBathrooms();
                 },
                 f -> Optional.ofNullable(filter.getMinLotSize())
@@ -454,14 +409,7 @@ public class MockGeoPropertiesService {
                         .orElse(true),
                 f -> Optional.ofNullable(filter.getMaxLotSize())
                         .map(max -> propertyArea <= max)
-                        .orElse(true),
-                f -> {
-                    if (filter.getAddress() == null || filter.getAddress().isBlank()) return true;
-                    String propertyAddress = (String) card.get("address");
-                    if (propertyAddress == null) return false;
-                    // Busca case-insensitive: verifica se o endereço da propriedade contém o texto buscado
-                    return propertyAddress.toLowerCase().contains(filter.getAddress().toLowerCase());
-                }
+                        .orElse(true)
         );
         return predicates.stream().allMatch(p -> p.test(feature));
     }
@@ -477,7 +425,6 @@ public class MockGeoPropertiesService {
 
     private int extractBedroomsFromDetails(String details) {
         if (details == null) return 0;
-        // Formato esperado: "2bd | 2ba | 1,027 sqft"
         Pattern pattern = Pattern.compile("(\\d+)bd");
         Matcher matcher = pattern.matcher(details);
         if (matcher.find()) {
@@ -488,7 +435,6 @@ public class MockGeoPropertiesService {
 
     private int extractBathroomsFromDetails(String details) {
         if (details == null) return 0;
-        // Formato esperado: "2bd | 2ba | 1,027 sqft"
         Pattern pattern = Pattern.compile("(\\d+)ba");
         Matcher matcher = pattern.matcher(details);
         if (matcher.find()) {
@@ -499,7 +445,6 @@ public class MockGeoPropertiesService {
 
     private int extractAreaFromDetails(String details) {
         if (details == null) return 0;
-        // Formato esperado: "2bd | 2ba | 1,027 sqft"
         Pattern pattern = Pattern.compile("([\\d,]+)\\s*sqft");
         Matcher matcher = pattern.matcher(details);
         if (matcher.find()) {
@@ -525,64 +470,75 @@ public class MockGeoPropertiesService {
     }
 
 
-    public Mono<Map<String, Object>> filterPropertiesByCriteria(PropertySearchFilterDTO filter) {
+    /**
+     * Filtra propriedades com base nos critérios fornecidos e endereço (via header).
+     *
+     * Lógica de busca por endereço:
+     * - Entrada Numérica (ex: "12"): prioriza endereços que começam com os números
+     * - Entrada de Texto (ex: "Main"): busca em qualquer parte do endereço (rua, bairro, cidade)
+     *
+     * Cenários:
+     * 1. Endereço completo (único resultado) - retorna 1 propriedade
+     * 2. Endereço incompleto/vizinhança (múltiplos resultados) - retorna N propriedades
+     * 3. Nenhum resultado - lança AddressNotFoundException
+     */
+    public Mono<Map<String, Object>> filterPropertiesByCriteria(PropertySearchFilterDTO filter, String address) {
         Map<String, Object> all = mockFeatureCollection().block();
         if (all == null) return Mono.just(emptyFeatureCollection());
         List<Map<String, Object>> features = getFeatures(all);
+
+        if (address != null && !address.isBlank()) {
+            features = filterByAddress(features, address);
+
+            if (features.isEmpty()) {
+                throw new AddressNotFoundException();
+            }
+        }
+
         List<Map<String, Object>> filtered = features.stream()
                 .filter(f -> matchesFilter(f, filter))
                 .toList();
 
-        // Se o filtro tem endereço e não encontrou nenhuma propriedade, lança exceção
-        if (filtered.isEmpty() && filter.getAddress() != null && !filter.getAddress().isBlank()) {
+        if (filtered.isEmpty() && address != null && !address.isBlank()) {
             throw new AddressNotFoundException();
         }
 
         return Mono.just(featureCollection(filtered));
     }
 
-    private BigDecimal calculateMonthlyPayment(BigDecimal price) {
-        // Implementação fictícia para calcular o pagamento mensal
-        BigDecimal interestRate = new BigDecimal("0.05"); // Taxa de juros de 5%
-        int loanTermMonths = 360; // Prazo do empréstimo de 30 anos
-        BigDecimal monthlyRate = interestRate.divide(new BigDecimal("12"), BigDecimal.ROUND_HALF_UP);
-        return price.multiply(monthlyRate).divide(BigDecimal.ONE.subtract(BigDecimal.ONE.divide(
-                BigDecimal.ONE.add(monthlyRate).pow(loanTermMonths), BigDecimal.ROUND_HALF_UP)), BigDecimal.ROUND_HALF_UP);
-    }
+    /**
+     * Filtra propriedades por endereço com suporte a busca inteligente.
+     * Entrada Numérica (ex: "12", "123", "1200"):
+     *   - Prioriza endereços que começam com os números digitados
+     *   - Ex: "12" → match "120 Main St", "1200 Louisiana St", "12500 Sandpiper"
+     *   - Ex: "123" → match "1234 Elm St" (refinamento conforme digita)
+     * Entrada de Texto (ex: "Main", "Memorial", "Houston"):
+     *   - Busca em qualquer parte do endereço (logradouro, bairro, cidade)
+     *   - Ex: "main" → match "1801 Main St", "123 Main Street"
+     *   - Ex: "memorial" → match "Memorial, Houston, TX 77024"
+     */
+    private List<Map<String, Object>> filterByAddress(List<Map<String, Object>> features, String searchTerm) {
+        String normalizedSearch = searchTerm.trim().toLowerCase();
+        boolean isNumericSearch = normalizedSearch.matches("^\\d+.*");
 
-    public Mono<Map<String, Object>> searchProperties(Integer minBedrooms, Integer minBathrooms) {
-        Map<String, Object> all = mockFeatureCollection().block();
-        if (all == null) return Mono.just(featureCollection(Collections.emptyList()));
-
-        List<Map<String, Object>> features = getFeatures(all);
-        List<Map<String, Object>> filtered = features.stream()
+        return features.stream()
                 .filter(f -> {
-                    Map<String, Object> p = getProperties(f);
-                    Object cardData = p.get("cardData");
-                    if (cardData instanceof Map) {
-                        Object details = ((Map<?, ?>) cardData).get("area");
-                        if (details != null) {
-                            String detailsStr = details.toString();
-                            int bedrooms = extractNumber(detailsStr, "bd");
-                            int bathrooms = extractNumber(detailsStr, "ba");
+                    Map<String, Object> props = getProperties(f);
+                    Map<String, Object> card = getCardData(props);
+                    String propertyAddress = (String) card.get("address");
 
-                            return (minBedrooms == null || bedrooms >= minBedrooms) &&
-                                    (minBathrooms == null || bathrooms >= minBathrooms);
-                        }
+                    if (propertyAddress == null) return false;
+
+                    String normalizedAddress = propertyAddress.toLowerCase();
+
+                    if (isNumericSearch) {
+                        return normalizedAddress.matches("^" + Pattern.quote(normalizedSearch) + ".*");
+                    } else {
+                        return normalizedAddress.contains(normalizedSearch);
                     }
-                    return false;
-                }).collect(Collectors.toList());
-
-        return Mono.just(featureCollection(filtered));
+                })
+                .toList();
     }
 
-    private int extractNumber(String details, String key) {
-        try {
-            int start = details.indexOf(key) - 2;
-            return Integer.parseInt(details.substring(start, start + 1).trim());
-        } catch (Exception e) {
-            return 0;
-        }
-    }
 
 }
