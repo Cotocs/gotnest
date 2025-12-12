@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/bff/v1/properties")
+@RequestMapping("/api/v1/properties")
 public class PropertiesGeoSearchController {
 
     private final MockGeoPropertiesService mockService;

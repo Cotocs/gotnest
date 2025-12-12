@@ -2,7 +2,6 @@ package com.gotnest.buyer.service;
 
 import com.gotnest.buyer.dto.PropertySearchFilterDTO;
 import com.gotnest.buyer.exception.AddressNotFoundException;
-import com.gotnest.buyer.exception.NotAvailableLocationException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -10,7 +9,6 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Service
 public class MockGeoPropertiesService {
